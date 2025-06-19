@@ -1,0 +1,60 @@
+name: Test Simple Web App
+
+on:
+  pull_request:
+    branches: [ main ]
+    paths:
+      - 'src/**'
+      - 'docker/**'
+      - 'package.json'
+      - '.github/workflows/test-app.yml'
+  workflow_dispatch:
+
+jobs:
+  test:
+    name: Test Application
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+          cache-dependency-path: package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run tests
+        run: npm test
+
+      - name: Build Docker image (without push)
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./docker/Dockerfile
+          push: false
+          tags: simple-web-app:test
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Test Docker image
+        run: |
+          # Start the container
+          docker run -d --name test-app -p 3000:3000 simple-web-app:test
+          
+          # Wait for app to start
+          sleep 10
+          
+          # Test health endpoint
+          curl -f http://localhost:3000/health || exit 1
+          
+          # Test main endpoint
+          curl -f http://localhost:3000/ || exit 1
+          
+          # Cleanup
+          docker stop test-app
+          docker rm test-app 

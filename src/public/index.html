@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Simple Web App</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="container">
+        <h1>🚀 Simple Web App</h1>
+        <p>Welcome to the platform demo application!</p>
+        
+        <div class="card">
+            <h2>Random Number Generator</h2>
+            <button id="randomBtn">Generate Random Number</button>
+            <p id="randomResult"></p>
+        </div>
+
+        <div class="card">
+            <h2>Calculator</h2>
+            <div class="calculator">
+                <input type="number" id="num1" placeholder="First number">
+                <select id="operation">
+                    <option value="add">+</option>
+                    <option value="subtract">-</option>
+                    <option value="multiply">×</option>
+                    <option value="divide">÷</option>
+                </select>
+                <input type="number" id="num2" placeholder="Second number">
+                <button id="calculateBtn">Calculate</button>
+                <p id="calcResult"></p>
+            </div>
+        </div>
+
+        <div class="card">
+            <h2>Health Check</h2>
+            <button id="healthBtn">Check Health</button>
+            <pre id="healthResult"></pre>
+        </div>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html> 
