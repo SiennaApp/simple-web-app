@@ -23,7 +23,7 @@ on:
         - demo
 
 concurrency:
-  group: eks-deployment-${{ github.event.inputs.environment }}
+  group: eks-deployment-${{ github.event.inputs.environment || 'development' }}
   cancel-in-progress: false
 
 env:
@@ -72,18 +72,18 @@ jobs:
       - name: Deploy to EKS
         run: |
           # Update the deployment with the new image
-          kubectl set image deployment/simple-web-app app=${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }} -n ${{ github.event.inputs.environment }}
+          kubectl set image deployment/simple-web-app app=${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }} -n ${{ github.event.inputs.environment || 'development' }}
           
           # Wait for rollout to complete
-          kubectl rollout status deployment/simple-web-app -n ${{ github.event.inputs.environment }}
+          kubectl rollout status deployment/simple-web-app -n ${{ github.event.inputs.environment || 'development' }}
 
       - name: Verify deployment
         run: |
-          kubectl get pods -l app=simple-web-app -n ${{ github.event.inputs.environment }}
-          kubectl get service simple-web-app-service -n ${{ github.event.inputs.environment }}
+          kubectl get pods -l app=simple-web-app -n ${{ github.event.inputs.environment || 'development' }}
+          kubectl get service simple-web-app-service -n ${{ github.event.inputs.environment || 'development' }}
 
       - name: Get application URL
         run: |
-          EXTERNAL_IP=$(kubectl get service simple-web-app-service -n ${{ github.event.inputs.environment }} -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')
+          EXTERNAL_IP=$(kubectl get service simple-web-app-service -n ${{ github.event.inputs.environment || 'development' }} -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')
           echo "Application URL: http://$EXTERNAL_IP"
           echo "url=http://$EXTERNAL_IP" >> $GITHUB_OUTPUT 
