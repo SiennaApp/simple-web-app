@@ -10,16 +10,26 @@ on:
       - '.github/workflows/deploy-eks.yml'
   workflow_dispatch:
     branches: [ main ]
+    inputs:
+      environment:
+        description: 'Target environment (and namespace) for deployment'
+        required: true
+        default: 'development'
+        type: choice
+        options:
+        - development
+        - staging
+        - production
+        - demo
 
 concurrency:
-  group: eks-deployment
+  group: eks-deployment-${{ github.event.inputs.environment }}
   cancel-in-progress: false
 
 env:
   AWS_REGION: us-east-2
   ECR_REPOSITORY: simple-web-app
   CLUSTER_NAME: simple-cluster
-  NAMESPACE: default
 
 permissions:
   id-token: write
@@ -62,18 +72,18 @@ jobs:
       - name: Deploy to EKS
         run: |
           # Update the deployment with the new image
-          kubectl set image deployment/simple-web-app app=${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }} -n ${{ env.NAMESPACE }}
+          kubectl set image deployment/simple-web-app app=${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }} -n ${{ github.event.inputs.environment }}
           
           # Wait for rollout to complete
-          kubectl rollout status deployment/simple-web-app -n ${{ env.NAMESPACE }}
+          kubectl rollout status deployment/simple-web-app -n ${{ github.event.inputs.environment }}
 
       - name: Verify deployment
         run: |
-          kubectl get pods -l app=simple-web-app -n ${{ env.NAMESPACE }}
-          kubectl get service simple-web-app-service -n ${{ env.NAMESPACE }}
+          kubectl get pods -l app=simple-web-app -n ${{ github.event.inputs.environment }}
+          kubectl get service simple-web-app-service -n ${{ github.event.inputs.environment }}
 
       - name: Get application URL
         run: |
-          EXTERNAL_IP=$(kubectl get service simple-web-app-service -n ${{ env.NAMESPACE }} -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')
+          EXTERNAL_IP=$(kubectl get service simple-web-app-service -n ${{ github.event.inputs.environment }} -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')
           echo "Application URL: http://$EXTERNAL_IP"
           echo "url=http://$EXTERNAL_IP" >> $GITHUB_OUTPUT 
