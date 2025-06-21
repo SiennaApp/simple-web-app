@@ -58,6 +58,15 @@ jobs:
           role-to-assume: arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/github-actions-githubactions-role
           aws-region: ${{ env.AWS_REGION }}
 
+      - name: Set DNS Hostname
+        id: dns
+        run: |
+          if [ "${{ steps.get_env.outputs.environment }}" == "production" ]; then
+            echo "hostname=simple-web-app.sandbox.sienna.app" >> $GITHUB_OUTPUT
+          else
+            echo "hostname=simple-web-app-${{ steps.get_env.outputs.environment }}.sandbox.sienna.app" >> $GITHUB_OUTPUT
+          fi
+
       - name: Login to Amazon ECR
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@v2
@@ -80,24 +89,25 @@ jobs:
 
       - name: Deploy to EKS
         run: |
-          # Replace the image tag in the deployment YAML
+          # Replace placeholders in Kubernetes manifests
           sed -i "s|image:.*|image: ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }}|g" k8s/deployment.yaml
+          sed -i "s|HOSTNAME_PLACEHOLDER|${{ steps.dns.outputs.hostname }}|g" k8s/ingress.yaml
+          sed -i "s|CERTIFICATE_ARN_PLACEHOLDER|${{ secrets.ACM_CERTIFICATE_ARN }}|g" k8s/ingress.yaml
           
-          # Apply the Kubernetes manifests
-          kubectl apply -f k8s/deployment.yaml -n ${{ steps.get_env.outputs.environment }}
-          kubectl apply -f k8s/service.yaml -n ${{ steps.get_env.outputs.environment }}
+          # Apply all the Kubernetes manifests in the k8s directory
+          kubectl apply -n ${{ steps.get_env.outputs.environment }} -f k8s/
           
           # Wait for rollout to complete
           kubectl rollout status deployment/simple-web-app -n ${{ steps.get_env.outputs.environment }}
 
       - name: Verify deployment
         run: |
-          kubectl get pods -l app=simple-web-app -n ${{ steps.get_env.outputs.environment }}
-          kubectl get service simple-web-app-service -n ${{ steps.get_env.outputs.environment }}
+          # Give the ALB and DNS a moment to propagate
+          sleep 60
+          kubectl get all,ingress -n ${{ steps.get_env.outputs.environment }}
 
       - name: Get application URL
         id: get_url
         run: |
-          EXTERNAL_IP=$(kubectl get service simple-web-app-service -n ${{ steps.get_env.outputs.environment }} -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')
-          echo "Application URL: http://$EXTERNAL_IP"
-          echo "url=http://$EXTERNAL_IP" >> $GITHUB_OUTPUT 
+          echo "Application URL: https://${{ steps.dns.outputs.hostname }}"
+          echo "url=https://${{ steps.dns.outputs.hostname }}" >> $GITHUB_OUTPUT 

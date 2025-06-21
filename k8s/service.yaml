@@ -3,10 +3,10 @@ kind: Service
 metadata:
   name: simple-web-app-service
 spec:
-  type: LoadBalancer
-  ports:
-  - port: 80
-    targetPort: 3000
-    protocol: TCP
   selector:
-    app: simple-web-app 
+    app: simple-web-app
+  type: ClusterIP
+  ports:
+    - protocol: TCP
+      port: 80
+      targetPort: 3000 
