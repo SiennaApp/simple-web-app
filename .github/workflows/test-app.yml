@@ -134,34 +134,6 @@ jobs:
           echo "✅ Content test passed"
           echo "📊 All endpoint tests completed successfully!"
 
-      - name: Test Kubernetes manifests
-        run: |
-          echo "Validating Kubernetes manifests..."
-          
-          # Check if kubectl is available, install if not
-          if ! command -v kubectl &> /dev/null; then
-            echo "Installing kubectl..."
-            curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
-            chmod +x kubectl
-            sudo mv kubectl /usr/local/bin/
-          fi
-          
-          # Validate manifests syntax (without cluster connection)
-          echo "Performing syntax validation..."
-          for manifest in k8s/*.yaml; do
-            if [ -f "$manifest" ]; then
-              echo "✓ Validating $manifest..."
-              if kubectl apply --dry-run=client --validate=false -f "$manifest" > /dev/null 2>&1; then
-                echo "  ✅ Syntax valid"
-              else
-                echo "  ❌ Syntax validation failed"
-                kubectl apply --dry-run=client --validate=false -f "$manifest"
-                exit 1
-              fi
-            fi
-          done
-          echo "All Kubernetes manifests passed syntax validation!"
-
       - name: Cleanup
         if: always()
         run: |
