@@ -2,17 +2,15 @@ name: Deploy to EKS
 
 on:
   push:
-    branches: [ main ]
-    paths:
-      - 'src/**'
-      - 'docker/**'
-      - 'k8s/**'
-      - '.github/workflows/deploy-eks.yml'
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
   workflow_dispatch:
-    branches: [ main ]
     inputs:
       environment:
-        description: 'Target environment (and namespace) for deployment'
+        description: 'Environment to deploy to'
         required: true
         default: 'development'
         type: choice
@@ -23,7 +21,7 @@ on:
         - demo
 
 concurrency:
-  group: eks-deployment-${{ github.event.inputs.environment || 'development' }}
+  group: eks-deployment-${{ github.event_name == 'pull_request' && 'staging' || (github.event_name == 'push' && 'production') || github.event.inputs.environment }}
   cancel-in-progress: false
 
 env:
@@ -43,6 +41,17 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Determine environment
+        id: get_env
+        run: |
+          if [ "${{ github.event_name }}" == "push" ]; then
+            echo "environment=production" >> $GITHUB_OUTPUT
+          elif [ "${{ github.event_name }}" == "pull_request" ]; then
+            echo "environment=staging" >> $GITHUB_OUTPUT
+          else
+            echo "environment=${{ github.event.inputs.environment }}" >> $GITHUB_OUTPUT
+          fi
+
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
@@ -53,16 +62,13 @@ jobs:
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@v2
 
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-      
-      - name: Build and push Docker image
+      - name: Build, tag, and push image to Amazon ECR
         uses: docker/build-push-action@v5
         with:
           context: .
           file: ./docker/Dockerfile
           push: true
-          tags: ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }},${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:latest
+          tags: ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
@@ -71,19 +77,24 @@ jobs:
 
       - name: Deploy to EKS
         run: |
-          # Update the deployment with the new image
-          kubectl set image deployment/simple-web-app app=${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }} -n ${{ github.event.inputs.environment || 'development' }}
+          # Replace the image tag in the deployment YAML
+          sed -i "s|image:.*|image: ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }}|g" k8s/deployment.yaml
+          
+          # Apply the Kubernetes manifests
+          kubectl apply -f k8s/deployment.yaml -n ${{ steps.get_env.outputs.environment }}
+          kubectl apply -f k8s/service.yaml -n ${{ steps.get_env.outputs.environment }}
           
           # Wait for rollout to complete
-          kubectl rollout status deployment/simple-web-app -n ${{ github.event.inputs.environment || 'development' }}
+          kubectl rollout status deployment/simple-web-app -n ${{ steps.get_env.outputs.environment }}
 
       - name: Verify deployment
         run: |
-          kubectl get pods -l app=simple-web-app -n ${{ github.event.inputs.environment || 'development' }}
-          kubectl get service simple-web-app-service -n ${{ github.event.inputs.environment || 'development' }}
+          kubectl get pods -l app=simple-web-app -n ${{ steps.get_env.outputs.environment }}
+          kubectl get service simple-web-app-service -n ${{ steps.get_env.outputs.environment }}
 
       - name: Get application URL
+        id: get_url
         run: |
-          EXTERNAL_IP=$(kubectl get service simple-web-app-service -n ${{ github.event.inputs.environment || 'development' }} -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')
+          EXTERNAL_IP=$(kubectl get service simple-web-app-service -n ${{ steps.get_env.outputs.environment }} -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')
           echo "Application URL: http://$EXTERNAL_IP"
           echo "url=http://$EXTERNAL_IP" >> $GITHUB_OUTPUT 
