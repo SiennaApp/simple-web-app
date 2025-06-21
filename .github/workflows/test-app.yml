@@ -61,7 +61,10 @@ jobs:
         run: npm test
 
       - name: Run security audit
-        run: npm audit --audit-level=high
+        run: |
+          echo "🔒 Running security audit..."
+          npm audit --audit-level=high
+          echo "✅ Security audit completed"
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -79,14 +82,15 @@ jobs:
 
       - name: Test Docker image startup
         run: |
-          echo "Starting container..."
-          docker run -d --name test-app -p 3000:3000 ${{ env.DOCKER_IMAGE }}
+          echo "🚀 Starting container..."
+          container_id=$(docker run -d --name test-app -p 3000:3000 ${{ env.DOCKER_IMAGE }})
+          echo "Container ID: $container_id"
           
-          echo "Waiting for application to start..."
+          echo "⏳ Waiting for application to start..."
           timeout=30
           while [ $timeout -gt 0 ]; do
             if curl -f -s http://localhost:3000/health > /dev/null 2>&1; then
-              echo "Application is ready!"
+              echo "✅ Application is ready!"
               break
             fi
             echo "Waiting... ($timeout seconds remaining)"
@@ -95,36 +99,40 @@ jobs:
           done
           
           if [ $timeout -le 0 ]; then
-            echo "Application failed to start within 30 seconds"
+            echo "❌ Application failed to start within 30 seconds"
+            echo "Container logs:"
             docker logs test-app
             exit 1
           fi
 
       - name: Run application tests
         run: |
+          echo "🧪 Running application endpoint tests..."
+          
           echo "Testing health endpoint..."
           response=$(curl -s -w "%{http_code}" http://localhost:3000/health)
           if [[ "$response" != *"200" ]]; then
-            echo "Health check failed: $response"
+            echo "❌ Health check failed: $response"
             exit 1
           fi
-          echo "Health check passed"
+          echo "✅ Health check passed"
           
           echo "Testing main endpoint..."
           response=$(curl -s -w "%{http_code}" http://localhost:3000/)
           if [[ "$response" != *"200" ]]; then
-            echo "Main endpoint failed: $response"
+            echo "❌ Main endpoint failed: $response"
             exit 1
           fi
-          echo "Main endpoint test passed"
+          echo "✅ Main endpoint test passed"
           
           echo "Testing application response content..."
           content=$(curl -s http://localhost:3000/)
           if [[ -z "$content" ]]; then
-            echo "No content returned from main endpoint"
+            echo "❌ No content returned from main endpoint"
             exit 1
           fi
-          echo "Content test passed"
+          echo "✅ Content test passed"
+          echo "📊 All endpoint tests completed successfully!"
 
       - name: Test Kubernetes manifests
         run: |
@@ -132,33 +140,53 @@ jobs:
           
           # Check if kubectl is available, install if not
           if ! command -v kubectl &> /dev/null; then
+            echo "Installing kubectl..."
             curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
             chmod +x kubectl
             sudo mv kubectl /usr/local/bin/
           fi
           
-          # Validate manifests syntax
+          # Validate manifests syntax (without cluster connection)
+          echo "Performing syntax validation..."
           for manifest in k8s/*.yaml; do
             if [ -f "$manifest" ]; then
-              echo "Validating $manifest..."
-              kubectl apply --dry-run=client -f "$manifest" || echo "Warning: $manifest validation failed"
+              echo "✓ Validating $manifest..."
+              if kubectl apply --dry-run=client --validate=false -f "$manifest" > /dev/null 2>&1; then
+                echo "  ✅ Syntax valid"
+              else
+                echo "  ❌ Syntax validation failed"
+                kubectl apply --dry-run=client --validate=false -f "$manifest"
+                exit 1
+              fi
             fi
           done
+          echo "All Kubernetes manifests passed syntax validation!"
 
       - name: Cleanup
         if: always()
         run: |
-          echo "Cleaning up test resources..."
-          docker stop test-app 2>/dev/null || true
-          docker rm test-app 2>/dev/null || true
-          docker rmi ${{ env.DOCKER_IMAGE }} 2>/dev/null || true
+          echo "🧹 Cleaning up test resources..."
+          if docker ps -q --filter "name=test-app" | grep -q .; then
+            echo "Stopping container..."
+            docker stop test-app 2>/dev/null || true
+          fi
+          if docker ps -aq --filter "name=test-app" | grep -q .; then
+            echo "Removing container..."
+            docker rm test-app 2>/dev/null || true
+          fi
+          if docker images -q ${{ env.DOCKER_IMAGE }} | grep -q .; then
+            echo "Removing test image..."
+            docker rmi ${{ env.DOCKER_IMAGE }} 2>/dev/null || true
+          fi
+          echo "✅ Cleanup completed"
 
       - name: Test Summary
         if: always()
         run: |
-          echo "=== Test Summary ==="
-          echo "Node.js version: ${{ env.NODE_VERSION }}"
-          echo "Docker image: ${{ env.DOCKER_IMAGE }}"
-          echo "Commit SHA: ${{ github.sha }}"
-          echo "Branch: ${{ github.ref_name }}"
-          echo "Event: ${{ github.event_name }}" 
+          echo "📋 === Test Summary ==="
+          echo "🟢 Node.js version: ${{ env.NODE_VERSION }}"
+          echo "🐳 Docker image: ${{ env.DOCKER_IMAGE }}"
+          echo "📝 Commit SHA: ${{ github.sha }}"
+          echo "🌿 Branch: ${{ github.ref_name }}"
+          echo "🔄 Event: ${{ github.event_name }}"
+          echo "⏰ Completed at: $(date -u)" 
